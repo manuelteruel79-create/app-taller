@@ -4,27 +4,380 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Gestión de Taller</title>
+  
+  <!-- Librería PDF.js para renderizar visores -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
   <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background-color: #f4f6f9;
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+    body { background-color: #f4f6f9; margin: 0; padding: 12px; color: #333; }
+    .contenedor { max-width: 1100px; margin: 0 auto; }
+    
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; gap: 10px; }
+    h1 { margin: 0; font-size: 1.3rem; color: #1e293b; }
+    
+    button { background: #2563eb; color: white; border: none; padding: 10px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.85rem; }
+    button:hover { background: #1d4ed8; }
+    button:disabled { opacity: 0.6; cursor: wait; }
+
+    .btn-wa { background: #22c55e; } .btn-wa:hover { background: #16a34a; }
+    .btn-print { background: #64748b; } .btn-print:hover { background: #475569; }
+    .btn-edit { background: #0284c7; } .btn-edit:hover { background: #0369a1; }
+    
+    .card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 15px; }
+    
+    .filter-bar { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+    .filter-bar input, .filter-bar select { flex: 1 1 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.95rem; }
+
+    .grid-form { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    input, textarea, select { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.95rem; margin-top: 4px; }
+    .hidden { display: none !important; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 0.88rem; }
+    th { background: #f8fafc; color: #64748b; font-weight: 600; }
+    
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 5px; }
+    .actions button { flex: 1; padding: 8px 10px; font-size: 0.85rem; }
+
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 10px; }
+    .modal-content { background: white; width: 100%; max-width: 500px; padding: 20px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); max-height: 90vh; overflow-y: auto; }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px; }
+    .modal-header h3 { margin: 0; color: #1e293b; font-size: 1.1rem; }
+
+    /* Visor PDF integrado */
+    .pagina-pdf { width: 100%; margin: 0 auto 12px; padding: 4px; background: #e5e7eb; border-radius: 6px; text-align: center; }
+    .pagina-pdf canvas { display: block; max-width: 100%; height: auto !important; margin: 0 auto; background: white; }
+
+    @media (max-width: 768px) {
+      body { padding: 8px; }
+      h1 { font-size: 1.1rem; }
+      table thead { display: none; }
+      table, tbody, tr, td { display: block; width: 100%; }
+      tr { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 12px; padding: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+      td { border: none; padding: 4px 0; font-size: 0.9rem; }
     }
-    iframe {
-      width: 100%;
-      height: 100%;
-      border: none;
-      display: block;
+
+    @media (min-width: 769px) {
+      .filter-bar input { flex: 2; }
+      .filter-bar select { flex: 1; }
+      .grid-form { grid-template-columns: 1fr 1fr; }
+      .full-width { grid-column: span 2; }
     }
   </style>
 </head>
 <body>
+  <div class="contenedor">
+    <header>
+      <h1>🛠️ Taller de PC</h1>
+      <button onclick="toggleForm()">+ Nueva Orden</button>
+    </header>
 
-  <!-- REEMPLAZA LA URL DE ABAJO POR TU ENLACE /exec QUE COPIASTE EN EL PASO 1 -->
-  <iframe src="https://script.google.com/macros/s/AKfycbyDaPXdNks-9_1a55IXXQyjUIfZ8luFibeR1KFXIcAzbeLjko8QMf6II_Acz_2kNc7d/exec" allow="downloads" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"></iframe>
+    <!-- Formulario de Ingreso -->
+    <div id="formContainer" class="card hidden">
+      <h3>Ingresar Equipo</h3>
+      <form id="orderForm" onsubmit="guardar(event)">
+        <div class="grid-form">
+          <div><label>Cliente</label><input type="text" id="cliente" required></div>
+          <div><label>Teléfono / WhatsApp</label><input type="text" id="telefono" placeholder="Ej: 3644123456" required></div>
+          <div class="full-width"><label>Equipo (Marca / Modelo / N° Serie)</label><input type="text" id="equipo" required></div>
+          <div class="full-width"><label>Falla Reportada</label><textarea id="falla" rows="2" required></textarea></div>
+          <div class="full-width"><label>Observaciones</label><textarea id="observaciones" rows="2" placeholder="Ej: cargador, rayones, faltantes..."></textarea></div>
+          <div><label>Presupuesto Estimado ($)</label><input type="number" id="presupuesto" value="0"></div>
+        </div>
+        <br>
+        <div style="display:flex; gap:10px;">
+          <button type="submit" style="flex:1;">Guardar Orden</button>
+          <button type="button" onclick="toggleForm()" class="btn-print">Cancelar</button>
+        </div>
+      </form>
+    </div>
 
+    <!-- Panel de Órdenes -->
+    <div id="panelLista" class="card">
+      <div class="filter-bar">
+        <input type="text" id="searchInput" oninput="filtrarOrdenes()" placeholder="🔍 Buscar por cliente, ID, equipo, observaciones...">
+        <select id="statusFilter" onchange="filtrarOrdenes()">
+          <option value="">Todos los Estados</option>
+          <option value="Ingresado">Ingresado</option>
+          <option value="En Proceso">En Proceso</option>
+          <option value="Listo">Listo</option>
+          <option value="Entregado">Entregado</option>
+        </select>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Fecha</th>
+            <th>Cliente</th>
+            <th>Equipo</th>
+            <th>Falla / Diag. / Obs.</th>
+            <th>Presupuesto</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="tablaOrdenes">
+          <tr><td colspan="8" style="text-align:center;">Cargando datos del taller...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Visor PDF para ver e imprimir comprobantes -->
+    <div id="panelPdf" class="card hidden">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h3 id="pdfTitle" style="margin:0;">Comprobante de Orden</h3>
+        <div style="display:flex; gap:8px;">
+          <button id="btnDescargarPdf" class="btn-principal" onclick="descargarPdfLocal()">Descargar PDF</button>
+          <button onclick="cerrarVisorPdf()" class="btn-print">Cerrar</button>
+        </div>
+      </div>
+      <div id="estadoRender" style="text-align:center; padding:10px; background:#eff6ff; color:#1e3a8a; border-radius:6px; margin-bottom:10px;">
+        Cargando comprobante...
+      </div>
+      <div id="visorPdf"></div>
+    </div>
+
+  </div>
+
+  <!-- Modal de Edición -->
+  <div id="updateModal" class="modal-overlay hidden" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modalTitle">Actualizar Reparación</h3>
+        <button onclick="cerrarModal()" class="btn-print" style="padding: 4px 10px;">✕</button>
+      </div>
+      <form id="updateForm" onsubmit="guardarActualizacion(event)">
+        <input type="hidden" id="editId">
+        <div style="margin-bottom: 12px;">
+          <label><strong>Estado del Trabajo:</strong></label>
+          <select id="editEstado" required>
+            <option value="Ingresado">Ingresado</option>
+            <option value="En Proceso">En Proceso</option>
+            <option value="Listo">Listo</option>
+            <option value="Entregado">Entregado</option>
+          </select>
+        </div>
+        <div style="margin-bottom: 12px;">
+          <label><strong>Diagnóstico / Trabajo Realizado:</strong></label>
+          <textarea id="editDiagnostico" rows="3" placeholder="Ej: Cambio de SSD, reprogramación de BIOS..."></textarea>
+        </div>
+        <div style="margin-bottom: 15px;">
+          <label><strong>Presupuesto Final ($):</strong></label>
+          <input type="number" id="editPresupuesto" required>
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+          <button type="button" onclick="cerrarModal()" class="btn-print" style="flex:1;">Cancelar</button>
+          <button type="submit" style="flex:1;">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // ⚠️ COLOCÁ TU URL /exec DE GOOGLE APPS SCRIPT AQUÍ
+    // =========================================================================
+    const URL_GOOGLE_WEB_APP = "https://script.google.com/macros/s/AKfycbyDaPXdNks-9_1a55IXXQyjUIfZ8luFibeR1KFXIcAzbeLjko8QMf6II_Acz_2kNc7d/exec";
+
+    let ordenesGlobales = [];
+    let pdfBytesActual = null;
+    let idPdfActual = "";
+
+    function toggleForm() {
+      document.getElementById('formContainer').classList.toggle('hidden');
+    }
+
+    // Petición Fetch HTTP nativa
+    function cargarOrdenes() {
+      fetch(URL_GOOGLE_WEB_APP)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.success) {
+            ordenesGlobales = data.ordenes || [];
+            filtrarOrdenes();
+          } else {
+            alert("Error al cargar datos: " + (data.error || "Desconocido"));
+          }
+        })
+        .catch(err => {
+          console.error(err);
+          document.getElementById('tablaOrdenes').innerHTML = '<tr><td colspan="8" style="text-align:center; color:red;">Error al conectar con la base de datos.</td></tr>';
+        });
+    }
+
+    function filtrarOrdenes() {
+      const busqueda = document.getElementById('searchInput').value.toLowerCase();
+      const estadoFiltro = document.getElementById('statusFilter').value;
+
+      const ordenesFiltradas = ordenesGlobales.filter(o => {
+        const coincideBusqueda = 
+          o.id.toLowerCase().includes(busqueda) ||
+          o.cliente.toLowerCase().includes(busqueda) ||
+          o.equipo.toLowerCase().includes(busqueda) ||
+          o.falla.toLowerCase().includes(busqueda) ||
+          o.diagnostico.toLowerCase().includes(busqueda) ||
+          o.observaciones.toLowerCase().includes(busqueda);
+          
+        const coincideEstado = estadoFiltro === "" || o.estado === estadoFiltro;
+
+        return coincideBusqueda && coincideEstado;
+      });
+
+      mostrarOrdenes(ordenesFiltradas);
+    }
+
+    function mostrarOrdenes(ordenes) {
+      const tbody = document.getElementById('tablaOrdenes');
+      if (ordenes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:20px; color:#64748b;">No hay órdenes registradas.</td></tr>';
+        return;
+      }
+      
+      tbody.innerHTML = ordenes.map(o => `
+        <tr>
+          <td><strong>${o.id}</strong><br><small style="color:#64748b;">${o.estado}</small></td>
+          <td><small style="color:#64748b;">📅 ${o.fecha}</small></td>
+          <td>👤 <strong>${o.cliente}</strong> (${o.telefono})</td>
+          <td>💻 ${o.equipo}</td>
+          <td>
+            ⚠️ <strong>Falla:</strong> ${o.falla}
+            ${o.diagnostico ? `<br><small style="color:#2563eb;">🔍 <strong>Diag:</strong> ${o.diagnostico}</small>` : ''}
+            ${o.observaciones ? `<br><small style="color:#475569;">📝 <strong>Obs:</strong> ${o.observaciones}</small>` : ''}
+          </td>
+          <td>💵 <strong>$${o.presupuesto}</strong></td>
+          <td class="actions">
+            <button onclick="abrirModalActualizar('${o.id}')" class="btn-edit">✏️ Editar</button>
+            <button onclick="enviarWhatsApp('${o.id}')" class="btn-wa">💬 WA</button>
+            <button onclick="solicitarPdf('${o.id}')" class="btn-print">📄 PDF</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    // Solicitar PDF por Fetch HTTP
+    function solicitarPdf(idOrden) {
+      document.getElementById('panelPdf').classList.remove('hidden');
+      document.getElementById('panelLista').classList.add('hidden');
+      document.getElementById('visorPdf').innerHTML = "";
+      document.getElementById('estadoRender').classList.remove('oculto');
+      document.getElementById('estadoRender').textContent = "Generando comprobante " + idOrden + "...";
+      idPdfActual = idOrden;
+
+      fetch(URL_GOOGLE_WEB_APP + "?accion=pdf&id=" + encodeURIComponent(idOrden))
+        .then(res => res.json())
+        .then(async res => {
+          if (res && res.success && res.base64) {
+            pdfBytesActual = base64ABytes(res.base64);
+            await renderizarPdf(pdfBytesActual);
+          } else {
+            document.getElementById('estadoRender').textContent = "Error al generar PDF: " + (res.error || "Desconocido");
+          }
+        })
+        .catch(err => {
+          document.getElementById('estadoRender').textContent = "Error de conexión al obtener el PDF.";
+        });
+    }
+
+    // Renderizado en canvas con PDF.js
+    async function renderizarPdf(bytes) {
+      if (typeof pdfjsLib === "undefined") {
+        throw new Error("No se pudo cargar la librería PDF.");
+      }
+
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+      const tarea = pdfjsLib.getDocument({ data: bytes });
+      const pdf = await tarea.promise;
+      const contenedor = document.getElementById("visorPdf");
+      contenedor.innerHTML = "";
+
+      for (let num = 1; num <= pdf.numPages; num++) {
+        const pagina = await pdf.getPage(num);
+        const viewportBase = pagina.getViewport({ scale: 1 });
+        const anchoDisponible = Math.max(280, contenedor.clientWidth - 12);
+        const escala = Math.min(2, anchoDisponible / viewportBase.width);
+        const viewport = pagina.getViewport({ scale: escala });
+
+        const envoltorio = document.createElement("div");
+        envoltorio.className = "pagina-pdf";
+
+        const canvas = document.createElement("canvas");
+        const contexto = canvas.getContext("2d", { alpha: false });
+        const ratio = window.devicePixelRatio || 1;
+
+        canvas.width = Math.floor(viewport.width * ratio);
+        canvas.height = Math.floor(viewport.height * ratio);
+        canvas.style.width = Math.floor(viewport.width) + "px";
+        canvas.style.height = Math.floor(viewport.height) + "px";
+
+        envoltorio.appendChild(canvas);
+        contenedor.appendChild(envoltorio);
+
+        await pagina.render({
+          canvasContext: contexto,
+          viewport: viewport,
+          transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : null
+        }).promise;
+      }
+
+      document.getElementById("estadoRender").classList.add("hidden");
+    }
+
+    function descargarPdfLocal() {
+      if (!pdfBytesActual) return;
+      const blob = new Blob([pdfBytesActual], { type: "application/pdf" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "Comprobante_" + idPdfActual + ".pdf";
+      link.click();
+    }
+
+    function cerrarVisorPdf() {
+      document.getElementById('panelPdf').classList.add('hidden');
+      document.getElementById('panelLista').classList.remove('hidden');
+      pdfBytesActual = null;
+    }
+
+    function base64ABytes(base64) {
+      const binario = atob(base64);
+      const bytes = new Uint8Array(binario.length);
+      for (let i = 0; i < binario.length; i++) {
+        bytes[i] = binario.charCodeAt(i);
+      }
+      return bytes;
+    }
+
+    function enviarWhatsApp(idOrden) {
+      const o = ordenesGlobales.find(item => item.id === idOrden);
+      if (!o) return;
+      let num = o.telefono.replace(/\D/g, '');
+      let mensaje = `Hola *${o.cliente}*! 👋\nTe actualizamos la información sobre tu equipo en el taller:\n\n📌 *Orden:* ${o.id}\n💻 *Equipo:* ${o.equipo}\n📊 *Estado:* ${o.estado}\n💵 *Presupuesto:* $${o.presupuesto}\n\nCualquier consulta quedamos a tu disposición.`;
+      window.open(`https://api.whatsapp.com/send?phone=${num}&text=${encodeURIComponent(mensaje)}`, '_blank');
+    }
+
+    function abrirModalActualizar(id) {
+      const o = ordenesGlobales.find(item => item.id === id);
+      if (!o) return;
+      document.getElementById('editId').value = o.id;
+      document.getElementById('modalTitle').innerText = `Actualizar ${o.id}`;
+      document.getElementById('editEstado').value = o.estado;
+      document.getElementById('editDiagnostico').value = o.diagnostico;
+      document.getElementById('editPresupuesto').value = o.presupuesto;
+      const modal = document.getElementById('updateModal');
+      modal.classList.remove('hidden');
+      modal.style.display = 'flex';
+    }
+
+    function cerrarModal() {
+      const modal = document.getElementById('updateModal');
+      modal.classList.add('hidden');
+      modal.style.display = 'none';
+    }
+
+    window.onload = cargarOrdenes;
+  </script>
 </body>
 </html>
