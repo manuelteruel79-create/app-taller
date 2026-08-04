@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Gestión de Taller</title>
   
-  <!-- Librería PDF.js -->
+  <!-- Librería PDF.js para renderizar visores -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
   <style>
@@ -177,12 +177,12 @@
 
   <script>
     // =========================================================================
-    // ⚠️ REEMPLAZA ESTA URL POR TU DIRECCIÓN /exec DE GOOGLE APPS SCRIPT
+    // ⚠️ TU DIRECCIÓN /exec DE GOOGLE APPS SCRIPT
     // =========================================================================
     const URL_GOOGLE_WEB_APP = "https://script.google.com/macros/s/AKfycbyDaPXdNks-9_1a55IXXQyjUIfZ8luFibeR1KFXIcAzbeLjko8QMf6II_Acz_2kNc7d/exec";
 
     let ordenesGlobales = [];
-    let pdfBytesActual = null;
+    let pdfBase64Memoria = "";
     let idPdfActual = "";
 
     function toggleForm() {
@@ -191,6 +191,7 @@
 
     // Consulta de órdenes
     function cargarOrdenes() {
+      document.getElementById('tablaOrdenes').innerHTML = '<tr><td colspan="8" style="text-align:center;">🔄 Cargando datos del taller...</td></tr>';
       fetch(URL_GOOGLE_WEB_APP, { redirect: "follow" })
         .then(res => res.json())
         .then(data => {
@@ -281,7 +282,7 @@
           btn.innerText = "Guardar Orden";
           document.getElementById('orderForm').reset();
           toggleForm();
-          cargarOrdenes();
+          setTimeout(cargarOrdenes, 500);
         })
         .catch(err => {
           btn.disabled = false;
@@ -304,11 +305,12 @@
         .then(res => res.json())
         .then(() => {
           cerrarModal();
-          cargarOrdenes();
+          setTimeout(cargarOrdenes, 500);
         })
         .catch(() => alert("Error al actualizar la orden."));
     }
 
+    // Solicitar PDF
     function solicitarPdf(idOrden) {
       document.getElementById('panelPdf').classList.remove('hidden');
       document.getElementById('panelLista').classList.add('hidden');
@@ -316,22 +318,28 @@
       document.getElementById('estadoRender').classList.remove('hidden');
       document.getElementById('estadoRender').textContent = "Generando comprobante " + idOrden + "...";
       idPdfActual = idOrden;
+      pdfBase64Memoria = "";
 
-      fetch(URL_GOOGLE_WEB_APP + "?accion=pdf&id=" + encodeURIComponent(idOrden), { redirect: "follow" })
+      const urlFinal = URL_GOOGLE_WEB_APP + "?accion=pdf&id=" + encodeURIComponent(idOrden);
+
+      fetch(urlFinal, { redirect: "follow" })
         .then(res => res.json())
         .then(async res => {
           if (res && res.success && res.base64) {
-            pdfBytesActual = base64ABytes(res.base64);
-            await renderizarPdf(pdfBytesActual);
+            pdfBase64Memoria = res.base64;
+            const pdfBytes = base64ABytes(res.base64);
+            await renderizarPdf(pdfBytes);
           } else {
             document.getElementById('estadoRender').textContent = "Error al generar PDF: " + (res.error || "Desconocido");
           }
         })
         .catch(err => {
+          console.error(err);
           document.getElementById('estadoRender').textContent = "Error de conexión al obtener el PDF.";
         });
     }
 
+    // Renderizar PDF en Canvas
     async function renderizarPdf(bytes) {
       if (typeof pdfjsLib === "undefined") throw new Error("No se pudo cargar la librería PDF.");
       pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -373,19 +381,35 @@
       document.getElementById("estadoRender").classList.add("hidden");
     }
 
+    // Descarga directa a prueba de fallos (0 bytes)
     function descargarPdfLocal() {
-      if (!pdfBytesActual) return;
-      const blob = new Blob([pdfBytesActual], { type: "application/pdf" });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = "Comprobante_" + idPdfActual + ".pdf";
-      link.click();
+      if (!pdfBase64Memoria) {
+        alert("El comprobante aún no ha terminado de cargar.");
+        return;
+      }
+
+      try {
+        const link = document.createElement("a");
+        link.href = "data:application/pdf;base64," + pdfBase64Memoria;
+        link.download = "Comprobante_" + idPdfActual + ".pdf";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } catch (e) {
+        const blob = new Blob([base64ABytes(pdfBase64Memoria)], { type: "application/pdf" });
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = "Comprobante_" + idPdfActual + ".pdf";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      }
     }
 
     function cerrarVisorPdf() {
       document.getElementById('panelPdf').classList.add('hidden');
       document.getElementById('panelLista').classList.remove('hidden');
-      pdfBytesActual = null;
+      pdfBase64Memoria = "";
     }
 
     function base64ABytes(base64) {
