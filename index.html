@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Gestión de Taller</title>
   
-  <!-- Librería PDF.js para renderizar visores -->
+  <!-- Librería PDF.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
   <style>
@@ -45,7 +45,6 @@
     .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px; }
     .modal-header h3 { margin: 0; color: #1e293b; font-size: 1.1rem; }
 
-    /* Visor PDF integrado */
     .pagina-pdf { width: 100%; margin: 0 auto 12px; padding: 4px; background: #e5e7eb; border-radius: 6px; text-align: center; }
     .pagina-pdf canvas { display: block; max-width: 100%; height: auto !important; margin: 0 auto; background: white; }
 
@@ -73,7 +72,7 @@
       <button onclick="toggleForm()">+ Nueva Orden</button>
     </header>
 
-    <!-- Formulario de Ingreso -->
+    <!-- Formulario -->
     <div id="formContainer" class="card hidden">
       <h3>Ingresar Equipo</h3>
       <form id="orderForm" onsubmit="guardar(event)">
@@ -87,13 +86,13 @@
         </div>
         <br>
         <div style="display:flex; gap:10px;">
-          <button type="submit" style="flex:1;">Guardar Orden</button>
+          <button type="submit" id="btnGuardar" style="flex:1;">Guardar Orden</button>
           <button type="button" onclick="toggleForm()" class="btn-print">Cancelar</button>
         </div>
       </form>
     </div>
 
-    <!-- Panel de Órdenes -->
+    <!-- Tabla -->
     <div id="panelLista" class="card">
       <div class="filter-bar">
         <input type="text" id="searchInput" oninput="filtrarOrdenes()" placeholder="🔍 Buscar por cliente, ID, equipo, observaciones...">
@@ -125,7 +124,7 @@
       </table>
     </div>
 
-    <!-- Visor PDF para ver e imprimir comprobantes -->
+    <!-- Visor PDF -->
     <div id="panelPdf" class="card hidden">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
         <h3 id="pdfTitle" style="margin:0;">Comprobante de Orden</h3>
@@ -142,7 +141,7 @@
 
   </div>
 
-  <!-- Modal de Edición -->
+  <!-- Modal -->
   <div id="updateModal" class="modal-overlay hidden" style="display: none;">
     <div class="modal-content">
       <div class="modal-header">
@@ -178,7 +177,7 @@
 
   <script>
     // =========================================================================
-    // ⚠️ VERIFICA TU URL /exec DE GOOGLE APPS SCRIPT AQUÍ
+    // ⚠️ REEMPLAZA ESTA URL POR TU DIRECCIÓN /exec DE GOOGLE APPS SCRIPT
     // =========================================================================
     const URL_GOOGLE_WEB_APP = "https://script.google.com/macros/s/AKfycbyDaPXdNks-9_1a55IXXQyjUIfZ8luFibeR1KFXIcAzbeLjko8QMf6II_Acz_2kNc7d/exec";
 
@@ -190,13 +189,10 @@
       document.getElementById('formContainer').classList.toggle('hidden');
     }
 
-    // Cargar la lista de órdenes vía Fetch de forma segura evitando bloqueos CORS
+    // Consulta de órdenes
     function cargarOrdenes() {
       fetch(URL_GOOGLE_WEB_APP, { redirect: "follow" })
-        .then(res => {
-          if (!res.ok) throw new Error("Error en la respuesta del servidor.");
-          return res.json();
-        })
+        .then(res => res.json())
         .then(data => {
           if (data && data.success) {
             ordenesGlobales = data.ordenes || [];
@@ -262,7 +258,57 @@
       `).join('');
     }
 
-    // Solicitar PDF vía Fetch
+    function guardar(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btnGuardar');
+      btn.disabled = true;
+      btn.innerText = "Guardando...";
+
+      const params = new URLSearchParams({
+        accion: 'guardar',
+        cliente: document.getElementById('cliente').value,
+        telefono: document.getElementById('telefono').value,
+        equipo: document.getElementById('equipo').value,
+        falla: document.getElementById('falla').value,
+        observaciones: document.getElementById('observaciones').value,
+        presupuesto: document.getElementById('presupuesto').value
+      });
+
+      fetch(URL_GOOGLE_WEB_APP + "?" + params.toString(), { redirect: "follow" })
+        .then(res => res.json())
+        .then(res => {
+          btn.disabled = false;
+          btn.innerText = "Guardar Orden";
+          document.getElementById('orderForm').reset();
+          toggleForm();
+          cargarOrdenes();
+        })
+        .catch(err => {
+          btn.disabled = false;
+          btn.innerText = "Guardar Orden";
+          alert("Error al guardar orden.");
+        });
+    }
+
+    function guardarActualizacion(e) {
+      e.preventDefault();
+      const params = new URLSearchParams({
+        accion: 'actualizar',
+        id: document.getElementById('editId').value,
+        estado: document.getElementById('editEstado').value,
+        diagnostico: document.getElementById('editDiagnostico').value,
+        presupuesto: document.getElementById('editPresupuesto').value
+      });
+
+      fetch(URL_GOOGLE_WEB_APP + "?" + params.toString(), { redirect: "follow" })
+        .then(res => res.json())
+        .then(() => {
+          cerrarModal();
+          cargarOrdenes();
+        })
+        .catch(() => alert("Error al actualizar la orden."));
+    }
+
     function solicitarPdf(idOrden) {
       document.getElementById('panelPdf').classList.remove('hidden');
       document.getElementById('panelLista').classList.add('hidden');
@@ -271,9 +317,7 @@
       document.getElementById('estadoRender').textContent = "Generando comprobante " + idOrden + "...";
       idPdfActual = idOrden;
 
-      const urlFinal = URL_GOOGLE_WEB_APP + "?accion=pdf&id=" + encodeURIComponent(idOrden);
-
-      fetch(urlFinal, { redirect: "follow" })
+      fetch(URL_GOOGLE_WEB_APP + "?accion=pdf&id=" + encodeURIComponent(idOrden), { redirect: "follow" })
         .then(res => res.json())
         .then(async res => {
           if (res && res.success && res.base64) {
@@ -284,17 +328,12 @@
           }
         })
         .catch(err => {
-          console.error(err);
           document.getElementById('estadoRender').textContent = "Error de conexión al obtener el PDF.";
         });
     }
 
-    // Renderizado en canvas con PDF.js
     async function renderizarPdf(bytes) {
-      if (typeof pdfjsLib === "undefined") {
-        throw new Error("No se pudo cargar la librería PDF.");
-      }
-
+      if (typeof pdfjsLib === "undefined") throw new Error("No se pudo cargar la librería PDF.");
       pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
       const tarea = pdfjsLib.getDocument({ data: bytes });
