@@ -178,7 +178,7 @@
 
   <script>
     // =========================================================================
-    // ⚠️ COLOCÁ TU URL /exec DE GOOGLE APPS SCRIPT AQUÍ
+    // ⚠️ VERIFICA TU URL /exec DE GOOGLE APPS SCRIPT AQUÍ
     // =========================================================================
     const URL_GOOGLE_WEB_APP = "https://script.google.com/macros/s/AKfycbyDaPXdNks-9_1a55IXXQyjUIfZ8luFibeR1KFXIcAzbeLjko8QMf6II_Acz_2kNc7d/exec";
 
@@ -190,21 +190,26 @@
       document.getElementById('formContainer').classList.toggle('hidden');
     }
 
-    // Petición Fetch HTTP nativa
+    // Cargar la lista de órdenes vía Fetch de forma segura evitando bloqueos CORS
     function cargarOrdenes() {
-      fetch(URL_GOOGLE_WEB_APP)
-        .then(res => res.json())
+      fetch(URL_GOOGLE_WEB_APP, { redirect: "follow" })
+        .then(res => {
+          if (!res.ok) throw new Error("Error en la respuesta del servidor.");
+          return res.json();
+        })
         .then(data => {
           if (data && data.success) {
             ordenesGlobales = data.ordenes || [];
             filtrarOrdenes();
           } else {
-            alert("Error al cargar datos: " + (data.error || "Desconocido"));
+            document.getElementById('tablaOrdenes').innerHTML = 
+              '<tr><td colspan="8" style="text-align:center; color:red;">' + (data.error || "No se pudieron obtener las órdenes.") + '</td></tr>';
           }
         })
         .catch(err => {
           console.error(err);
-          document.getElementById('tablaOrdenes').innerHTML = '<tr><td colspan="8" style="text-align:center; color:red;">Error al conectar con la base de datos.</td></tr>';
+          document.getElementById('tablaOrdenes').innerHTML = 
+            '<tr><td colspan="8" style="text-align:center; color:red; padding:15px;">⚠️ Error de conexión con la base de datos de Google.</td></tr>';
         });
     }
 
@@ -257,16 +262,18 @@
       `).join('');
     }
 
-    // Solicitar PDF por Fetch HTTP
+    // Solicitar PDF vía Fetch
     function solicitarPdf(idOrden) {
       document.getElementById('panelPdf').classList.remove('hidden');
       document.getElementById('panelLista').classList.add('hidden');
       document.getElementById('visorPdf').innerHTML = "";
-      document.getElementById('estadoRender').classList.remove('oculto');
+      document.getElementById('estadoRender').classList.remove('hidden');
       document.getElementById('estadoRender').textContent = "Generando comprobante " + idOrden + "...";
       idPdfActual = idOrden;
 
-      fetch(URL_GOOGLE_WEB_APP + "?accion=pdf&id=" + encodeURIComponent(idOrden))
+      const urlFinal = URL_GOOGLE_WEB_APP + "?accion=pdf&id=" + encodeURIComponent(idOrden);
+
+      fetch(urlFinal, { redirect: "follow" })
         .then(res => res.json())
         .then(async res => {
           if (res && res.success && res.base64) {
@@ -277,6 +284,7 @@
           }
         })
         .catch(err => {
+          console.error(err);
           document.getElementById('estadoRender').textContent = "Error de conexión al obtener el PDF.";
         });
     }
